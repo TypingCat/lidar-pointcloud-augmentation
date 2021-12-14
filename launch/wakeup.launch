@@ -1,0 +1,8 @@
+<launch>
+    <include file="$(find amr1)/launch/module/model.launch"/>
+    <include file="$(find amr1)/launch/module/myahrs.launch"/>
+    <include file="$(find amr1)/launch/module/velodyne.launch"/>
+    
+    <node name="ros_rasp_node"
+        pkg="ros_rasp_node" type="ros_rasp_node" output="screen"/>
+</launch>
