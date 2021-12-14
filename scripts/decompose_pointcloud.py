@@ -1,11 +1,14 @@
-#!/usr/bin/env python
+#! /usr/bin/env python
 
 import rospy
 import struct
 
 from sensor_msgs.msg import PointCloud2
 
-class DecomposeRing:
+
+class DecomposePointcloud:
+    '''Example of how to access point cloud raw data'''
+    
     def __init__(self):
         self.format = '=ffffHf'
         self.target = 0
@@ -34,6 +37,6 @@ class DecomposeRing:
 
 
 if __name__ == '__main__':
-    rospy.init_node('lidar_decompose_ring')
-    DecomposeRing()
+    rospy.init_node('lidar_decompose_pointcloud')
+    dp = DecomposePointcloud()
     rospy.spin()

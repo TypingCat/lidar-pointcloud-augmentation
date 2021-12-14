@@ -161,7 +161,7 @@ include_directories(
 catkin_install_python(PROGRAMS
   scripts/augmentation_analysis.py
   scripts/augmentation.py
-  scripts/decompose_ring.py
+  scripts/decompose_pointcloud.py
   DESTINATION ${CATKIN_PACKAGE_BIN_DESTINATION}
 )
 

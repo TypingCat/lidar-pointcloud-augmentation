@@ -1,4 +1,4 @@
-#!/usr/bin/env python
+#! /usr/bin/env python
 
 import rospy
 import struct
@@ -13,9 +13,9 @@ from collections import defaultdict
 
 class Augmentation:
     '''LiDAR point cloud augmentation'''
-    point_cloud_format = '=ffffHf'
-    ring_target = [6]
     
+    point_cloud_format = '=ffffHf'
+    ring_target = [6]    
     window_size = 10    
     lidar_height = 0.35
     dphi_min = 0.05
@@ -27,34 +27,34 @@ class Augmentation:
     dn_dphi = 5/(math.pi/180.)
 
     def __init__(self):
-        self.signal_lost_range_publisher = rospy.Publisher("signal_lost_range", Marker, queue_size=10)
+        self.signal_loss_range_publisher = rospy.Publisher("signal_loss_range", Marker, queue_size=10)
         self.point_cloud_publisher = rospy.Publisher("augmented_points", PointCloud2, queue_size=10)
         self.point_cloud_subscriber = rospy.Subscriber("velodyne_points", PointCloud2, self.point_cloud_callback)
     
     def point_cloud_callback(self, data):
         # Get points from LiDAR
-        points, bump = defaultdict(list), []
+        points, frame = defaultdict(list), []
         for step in range(0, data.row_step, data.point_step):
             x, y, z, i, Ring, t = struct.unpack_from(self.point_cloud_format, data.data, step)
-            if Ring not in self.ring_target: continue           # limit input ring 
+            if Ring not in self.ring_target: continue   # limit input ring 
             
-            # Get bump points
+            # Get frame points
             h = z + self.lidar_height
-            if h < self.ground_min: continue                # Remove ground reflection
+            if h < self.ground_min: continue            # Remove ground reflection
             if h < self.ground_max and i > self.i_min:
-                bump.append((x, y, z, i, Ring, t)) # bump.append((x, y, z, i, Ring, t))
+                frame.append((x, y, z, i, Ring, t))
             
             # Get normal points
             phi = math.atan2(y, x)
             rho = math.sqrt(math.pow(x, 2) + math.pow(y, 2))
             points[Ring].append((x, y, z, i, Ring, t, phi, rho))
             
-        # Trim ring points
+        # Algorithm 2. Remove outlier
         for Ring in points.keys():
-            # Sort points by phi
-            points[Ring].sort(key=lambda point: point[6], reverse=True)
+            points[Ring].sort(  # Sort points by phi
+                key=lambda point: point[6], reverse=True)
             
-            # Remove outliers
+            # Remove outliers using standard score
             rho_mean_left = \
                 [0 for _ in range(self.window_size)] + \
                 [np.mean([p[7] for p in points[Ring][idx-self.window_size:idx]])
@@ -76,8 +76,8 @@ class Augmentation:
                 if abs(p[7] - rho_mean_left[idx]) < 3*rho_std_left[idx] or
                    abs(p[7] - rho_mean_right[idx]) < 3*rho_std_right[idx]]
         
-        # Search Signal Lost Range
-        signal_lost_range = []
+        # Algorithm 3. Search signal loss range
+        signal_loss_range = []
         for Ring in points.keys():
             for idx in range(len(points[Ring])-1):
                 p0, p1 = points[Ring][idx], points[Ring][idx+1]
@@ -97,26 +97,23 @@ class Augmentation:
                         p1 = points[Ring][i]
                         break
                     
-                signal_lost_range.append((p0, p1))
+                signal_loss_range.append((p0, p1))
 
-        for p in bump:
+        # Add frame points to the result
+        for p in frame:
             data.data += struct.pack(self.point_cloud_format,
-                    p[0],
-                    p[1],
-                    0.,
-                    p[3],
-                    16,
-                    p[5])
-        data.width += len(bump)
-            
-        for p in signal_lost_range:
+                    p[0], p[1], 0., p[3], 16, p[5])
+        data.width += len(frame)
+        
+        # Publish result
+        for p in signal_loss_range:
             n = int((p[0][6] - p[1][6]) * self.dn_dphi)
             for rate in [float(r)/n for r in range(1, n)]:
                 data.data += struct.pack(self.point_cloud_format,
                     p[0][0] + rate*(p[1][0] - p[0][0]),
                     p[0][1] + rate*(p[1][1] - p[0][1]),
                     p[0][2] + rate*(p[1][2] - p[0][2]),
-                    100, #p[0][3] + rate*(p[1][3] - p[0][3]),
+                    100, #p[0][3] + rate*(p[1][3] - p[0][3]), augmented point height
                     p[0][4],
                     p[0][5] + rate*(p[1][5] - p[0][5]))
             data.width += n - 1
@@ -124,23 +121,22 @@ class Augmentation:
         data.row_step = data.width * data.point_step
         self.point_cloud_publisher.publish(data)
         
-        # # Publish marker
-        # marker = Marker()
-        # marker.header = data.header
-        # marker.ns = "ring"
-        # marker.type = Marker.LINE_LIST
-        # marker.action = Marker.MODIFY
-        # marker.pose.orientation.w = 1
-        # marker.scale.x = 0.01
-        # marker.color.r = 0
-        # marker.color.g = 0
-        # marker.color.b = 1
-        # marker.color.a = 0.5
+        # Publish marker
+        marker = Marker()
+        marker.header = data.header
+        marker.ns = "signal_loss_range"
+        marker.type = Marker.LINE_LIST
+        marker.action = Marker.MODIFY
+        marker.pose.orientation.w = 1
+        marker.scale.x = 0.01
+        marker.color.r = 0
+        marker.color.g = 0
+        marker.color.b = 1
+        marker.color.a = 0.5
+        marker.points = []
+        [marker.points.extend([Point(p[0][0], p[0][1], p[0][2]), Point(p[1][0], p[1][1], p[1][2])]) for p in signal_loss_range]
         
-        # marker.points = []
-        # [marker.points.extend([Point(p[0][0], p[0][1], p[0][2]), Point(p[1][0], p[1][1], p[1][2])]) for p in signal_lost_range]
-        
-        # self.signal_lost_range_publisher.publish(marker)
+        self.signal_loss_range_publisher.publish(marker)
 
 
 if __name__ == '__main__':
