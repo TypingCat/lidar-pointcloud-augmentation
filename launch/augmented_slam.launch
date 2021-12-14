@@ -1,0 +1,23 @@
+<launch>
+
+	<node name="Augment_LiDAR_Point_cloud"
+		pkg="lidar" type="augmentation.py" output="screen"/>
+
+	# SLAM
+	<node name="cartographer_node"
+		pkg="cartographer_ros" type="cartographer_node" output="screen" args="
+		-configuration_directory $(find amr)/config/cartographer
+		-configuration_basename slam_2D_velodyne.lua">
+		<remap from="imu" to="imu/data"/>
+		<remap from="points2" to="augmented_points"/>
+	</node>
+
+	# Occupancy grid map
+	<node name="cartographer_occupancy_grid_node"
+		pkg="cartographer_ros" type="cartographer_occupancy_grid_node"
+		args="-resolution 0.05"/>
+
+	# Stargazer graph
+    <!-- <node name="stargazer_graph" pkg="stargazer" type="graph.py" output="screen"/> -->
+
+</launch>
