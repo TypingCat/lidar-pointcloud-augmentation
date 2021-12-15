@@ -6,7 +6,7 @@
 		-configuration_directory $(find slam)/config/cartographer
 		-configuration_basename slam_2D_velodyne.lua">
 		<remap from="imu" to="imu/data"/>
-		<remap from="points2" to="augmented_points"/>
+		<remap from="points2" to="augmented_pointcloud"/>
 	</node>
 
 	# Occupancy grid map
