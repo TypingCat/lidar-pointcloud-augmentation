@@ -1,0 +1,5 @@
+<launch>
+    <node name="lidar_rviz"
+        pkg="rviz" type="rviz" output="screen"
+        args="-d $(find lidar)/lidar.rviz"/>
+</launch>

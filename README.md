@@ -5,4 +5,5 @@
 roslaunch lidar wakeup.launch
 rosrun lidar augmentation.py
 roslaunch lidar getup.launch
+roslaunch lidar show.launch
 ```
