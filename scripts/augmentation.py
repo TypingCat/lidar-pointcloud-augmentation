@@ -15,14 +15,12 @@ class Augmentation:
     '''LiDAR point cloud augmentation'''
     
     point_cloud_format = '=ffffHf'
-    ring_target = [6]    
+    # target_ring = [6]
     window_size = 10    
     lidar_height = 0.35
     dphi_min = 0.05
-    ground_min = -0.05
-    ground_max = 0.2
-    i_min = 30
-    i_accept = 50
+    ground_min, ground_max = -0.05, 0.2
+    i_min, i_accept = 30, 50
     d_max = 1.0
     dn_dphi = 5/(math.pi/180.)
 
@@ -30,82 +28,27 @@ class Augmentation:
         self.signal_loss_range_publisher = rospy.Publisher("signal_loss_range", Marker, queue_size=10)
         self.point_cloud_publisher = rospy.Publisher("augmented_points", PointCloud2, queue_size=10)
         self.point_cloud_subscriber = rospy.Subscriber("velodyne_points", PointCloud2, self.point_cloud_callback)
-    
-    def point_cloud_callback(self, data):
-        # Get points from LiDAR
-        points, frame = defaultdict(list), []
-        for step in range(0, data.row_step, data.point_step):
-            x, y, z, i, Ring, t = struct.unpack_from(self.point_cloud_format, data.data, step)
-            if Ring not in self.ring_target: continue   # limit input ring 
-            
-            # Get frame points
-            h = z + self.lidar_height
-            if h < self.ground_min: continue            # Remove ground reflection
-            if h < self.ground_max and i > self.i_min:
-                frame.append((x, y, z, i, Ring, t))
-            
-            # Get normal points
-            phi = math.atan2(y, x)
-            rho = math.sqrt(math.pow(x, 2) + math.pow(y, 2))
-            points[Ring].append((x, y, z, i, Ring, t, phi, rho))
-            
-        # Algorithm 2. Remove outlier
-        for Ring in points.keys():
-            points[Ring].sort(  # Sort points by phi
-                key=lambda point: point[6], reverse=True)
-            
-            # Remove outliers using standard score
-            rho_mean_left = \
-                [0 for _ in range(self.window_size)] + \
-                [np.mean([p[7] for p in points[Ring][idx-self.window_size:idx]])
-                    for idx in range(self.window_size, len(points[Ring]))]
-            rho_std_left = \
-                [0 for _ in range(self.window_size)] + \
-                [np.std([p[7] for p in points[Ring][idx-self.window_size:idx]])
-                    for idx in range(self.window_size, len(points[Ring]))]
-            rho_mean_right = \
-                [np.mean([p[7] for p in points[Ring][idx+1:idx+1+self.window_size]])
-                    for idx in range(len(points[Ring]) - self.window_size)] + \
-                [0 for _ in range(self.window_size)]
-            rho_std_right = \
-                [np.std([p[7] for p in points[Ring][idx+1:idx+1+self.window_size]])
-                    for idx in range(len(points[Ring]) - self.window_size)] + \
-                [0 for _ in range(self.window_size)]
-                
-            points[Ring] = [p for idx, p in enumerate(points[Ring])
-                if abs(p[7] - rho_mean_left[idx]) < 3*rho_std_left[idx] or
-                   abs(p[7] - rho_mean_right[idx]) < 3*rho_std_right[idx]]
-        
-        # Algorithm 3. Search signal loss range
-        signal_loss_range = []
-        for Ring in points.keys():
-            for idx in range(len(points[Ring])-1):
-                p0, p1 = points[Ring][idx], points[Ring][idx+1]
-                
-                # Remove unnecessary interpolation range
-                if p0[6] - p1[6] < self.dphi_min: continue
-                # if p0[2] < self.ground_max or p1[2] < self.ground_max: continue
-                if math.sqrt(math.pow(p0[0] - p1[0], 2) + math.pow(p0[1] - p1[1], 2)) > self.d_max: continue
-                
-                # Update endpoints with acceptable intensity points
-                for i in range(idx, max(idx-self.window_size, 0), -1):
-                    if points[Ring][i][3] > self.i_accept:
-                        p0 = points[Ring][i]
-                        break
-                for i in range(idx+1, min(idx+1+self.window_size, len(points[Ring]))):
-                    if points[Ring][i][3] > self.i_accept:
-                        p1 = points[Ring][i]
-                        break
-                    
-                signal_loss_range.append((p0, p1))
 
-        # Add frame points to the result
-        for p in frame:
+    def point_cloud_callback(self, data):
+        points, bump_points = self.get_points(data)
+        # print(len(points))
+        # print(data.height, data.width)
+        # print(data.point_step, data.row_step)
+        return
+
+        # Algorithm 2
+        points = self.remove_outlier(points)
+        
+        # Algorithm 3
+        signal_loss_range = self.search_signal_loss_range(points)
+
+        # Add bump points to the result
+        for p in bump_points:
             data.data += struct.pack(self.point_cloud_format,
                     p[0], p[1], 0., p[3], 16, p[5])
-        data.width += len(frame)
+        data.width += len(bump_points)
         
-        # Publish result
+        # Add augmentation points to the result
         for p in signal_loss_range:
             n = int((p[0][6] - p[1][6]) * self.dn_dphi)
             for rate in [float(r)/n for r in range(1, n)]:
@@ -113,11 +56,10 @@ class Augmentation:
                     p[0][0] + rate*(p[1][0] - p[0][0]),
                     p[0][1] + rate*(p[1][1] - p[0][1]),
                     p[0][2] + rate*(p[1][2] - p[0][2]),
-                    100, #p[0][3] + rate*(p[1][3] - p[0][3]), augmented point height
+                    p[0][3] + rate*(p[1][3] - p[0][3]),
                     p[0][4],
                     p[0][5] + rate*(p[1][5] - p[0][5]))
             data.width += n - 1
-            
         data.row_step = data.width * data.point_step
         self.point_cloud_publisher.publish(data)
         
@@ -135,8 +77,84 @@ class Augmentation:
         marker.color.a = 0.5
         marker.points = []
         [marker.points.extend([Point(p[0][0], p[0][1], p[0][2]), Point(p[1][0], p[1][1], p[1][2])]) for p in signal_loss_range]
-        
         self.signal_loss_range_publisher.publish(marker)
+        
+    def get_points(self, data):
+        points, bump_points = defaultdict(list), []
+        for step in range(0, data.row_step, data.point_step):
+            x, y, z, i, ring, t = struct.unpack_from(self.point_cloud_format, data.data, step)            
+            # if ring not in self.target_ring: continue   # limit input ring
+
+            # print(x, y, z, i, ring, t)
+            
+            # Get bump points
+            h = z + self.lidar_height
+            if h < self.ground_min: continue            # Remove ground reflection
+            if h < self.ground_max and i > self.i_min:
+                bump_points.append((x, y, z, i, ring, t))
+            
+            # Get normal points
+            phi = math.atan2(y, x)
+            rho = math.sqrt(math.pow(x, 2) + math.pow(y, 2))
+            points[ring].append((x, y, z, i, ring, t, phi, rho))
+
+        return points, bump_points
+
+    def remove_outlier(self, points):
+        for ring in points.keys():
+            # Sort points by phi
+            points[ring].sort(key=lambda point: point[6], reverse=True)
+            
+            # Calculate mean and std. from left and right populations
+            rho_mean_left = \
+                [0 for _ in range(self.window_size)] + \
+                [np.mean([p[7] for p in points[ring][idx-self.window_size:idx]])
+                    for idx in range(self.window_size, len(points[ring]))]
+            rho_std_left = \
+                [0 for _ in range(self.window_size)] + \
+                [np.std([p[7] for p in points[ring][idx-self.window_size:idx]])
+                    for idx in range(self.window_size, len(points[ring]))]
+            rho_mean_right = \
+                [np.mean([p[7] for p in points[ring][idx+1:idx+1+self.window_size]])
+                    for idx in range(len(points[ring]) - self.window_size)] + \
+                [0 for _ in range(self.window_size)]
+            rho_std_right = \
+                [np.std([p[7] for p in points[ring][idx+1:idx+1+self.window_size]])
+                    for idx in range(len(points[ring]) - self.window_size)] + \
+                [0 for _ in range(self.window_size)]
+
+            # Remove outliers using standard score
+            points[ring] = [p for idx, p in enumerate(points[ring])
+                if abs(p[7] - rho_mean_left[idx]) < 3*rho_std_left[idx] or
+                   abs(p[7] - rho_mean_right[idx]) < 3*rho_std_right[idx]]
+
+        return points
+
+    def search_signal_loss_range(self, points):
+        signal_loss_range = []
+        for ring in points.keys():
+            for idx in range(len(points[ring])-1):
+                p0, p1 = points[ring][idx], points[ring][idx+1]
+                
+                # Check interpolation requirements
+                if p0[6] - p1[6] < self.dphi_min: continue
+                # if p0[2] < self.ground_max or p1[2] < self.ground_max: continue
+                if math.sqrt(math.pow(p0[0] - p1[0], 2) + math.pow(p0[1] - p1[1], 2)) > self.d_max: continue
+                
+                # Update endpoints with acceptable intensity points
+                for i in range(idx, max(idx-self.window_size, 0), -1):
+                    if points[ring][i][3] > self.i_accept:
+                        p0 = points[ring][i]
+                        break
+                for i in range(idx+1, min(idx+1+self.window_size, len(points[ring]))):
+                    if points[ring][i][3] > self.i_accept:
+                        p1 = points[ring][i]
+                        break
+
+                # Add signal loss range
+                signal_loss_range.append((p0, p1))
+
+        return signal_loss_range
 
 
 if __name__ == '__main__':

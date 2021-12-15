@@ -27,7 +27,7 @@ class Augmentation:
     dn_dphi = 5/(math.pi/180.)
 
     def __init__(self):
-        self.signal_lost_range_publisher = rospy.Publisher("signal_lost_range", Marker, queue_size=10)
+        self.signal_loss_range_publisher = rospy.Publisher("signal_loss_range", Marker, queue_size=10)
         self.point_cloud_publisher = rospy.Publisher("augmented_points", PointCloud2, queue_size=10)
         self.point_cloud_subscriber = rospy.Subscriber("velodyne_points", PointCloud2, self.point_cloud_callback)
     
@@ -77,7 +77,7 @@ class Augmentation:
                    abs(p[7] - rho_mean_right[idx]) < 3*rho_std_right[idx]]
         
         # Search Signal Lost Range
-        signal_lost_range = []
+        signal_loss_range = []
         for Ring in points.keys():
             for idx in range(len(points[Ring])-1):
                 p0, p1 = points[Ring][idx], points[Ring][idx+1]
@@ -97,7 +97,7 @@ class Augmentation:
                         p1 = points[Ring][i]
                         break
                     
-                signal_lost_range.append((p0, p1))
+                signal_loss_range.append((p0, p1))
         
         # Augment point cloud
         point_cloud = PointCloud2()
@@ -116,7 +116,7 @@ class Augmentation:
                     p[5])
         width += len(bump)
             
-        for p in signal_lost_range:
+        for p in signal_loss_range:
             n = int((p[0][6] - p[1][6]) * self.dn_dphi)
             for rate in [float(r)/n for r in range(1, n)]:
                 point_cloud.data += struct.pack(self.point_cloud_format,
@@ -145,9 +145,9 @@ class Augmentation:
         marker.color.a = 0.5
         
         marker.points = []
-        [marker.points.extend([Point(p[0][0], p[0][1], p[0][2]), Point(p[1][0], p[1][1], p[1][2])]) for p in signal_lost_range]
+        [marker.points.extend([Point(p[0][0], p[0][1], p[0][2]), Point(p[1][0], p[1][1], p[1][2])]) for p in signal_loss_range]
         
-        self.signal_lost_range_publisher.publish(marker)
+        self.signal_loss_range_publisher.publish(marker)
 
 
 if __name__ == '__main__':
