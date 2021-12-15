@@ -173,7 +173,7 @@ Visualization Manager:
       Name: TF
       Show Arrows: true
       Show Axes: true
-      Show Names: true
+      Show Names: false
       Tree:
         map:
           odom:
@@ -334,25 +334,25 @@ Visualization Manager:
   Views:
     Current:
       Class: rviz/ThirdPersonFollower
-      Distance: 5.794013023376465
+      Distance: 3.515872001647949
       Enable Stereo Rendering:
         Stereo Eye Separation: 0.05999999865889549
         Stereo Focal Distance: 1
         Swap Stereo Eyes: false
         Value: false
       Focal Point:
-        X: 0.5727908611297607
-        Y: -0.13288629055023193
-        Z: -7.152557373046875e-7
+        X: 0.8414319753646851
+        Y: -0.4511200189590454
+        Z: -1.5497207641601562e-6
       Focal Shape Fixed Size: true
       Focal Shape Size: 0.05000000074505806
       Invert Z Axis: false
       Name: Current View
       Near Clip Distance: 0.009999999776482582
-      Pitch: 0.4953989088535309
+      Pitch: 0.37539881467819214
       Target Frame: base_link
       Value: ThirdPersonFollower (rviz)
-      Yaw: 3.175396680831909
+      Yaw: 4.290408134460449
     Saved: ~
 Window Geometry:
   Displays:
