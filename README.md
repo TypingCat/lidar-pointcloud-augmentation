@@ -7,6 +7,8 @@ Proposed point cloud augmentation process. There are four glass panels around th
 
 
 ## Simple Usage
+Ubuntu 18.04, ROS melodic, VLP-16
+
 ``` bash
 roslaunch lidar wakeup.launch
 rosrun lidar augmentation.py
